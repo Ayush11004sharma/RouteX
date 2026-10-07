@@ -5,6 +5,7 @@ import { MapView } from '../components/Map/MapView';
 import { useUrlSync } from '../hooks/useUrlSync';
 import { useAppStore } from '../stores/useAppStore';
 import { SearchBar } from '../components/Search/SearchBar';
+import { AuthModal } from '../components/Auth/AuthModal';
 
 export const MainMapPage = () => {
   useUrlSync();
@@ -33,6 +34,9 @@ export const MainMapPage = () => {
       <main className="relative flex-1 h-full w-full overflow-hidden">
         <MapView />
       </main>
+
+      {/* Cloud Authentication Modal */}
+      <AuthModal />
     </div>
   );
 };

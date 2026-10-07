@@ -1,3 +1,5 @@
+import { api } from './api';
+
 const weatherCache = new Map();
 const CACHE_TTL_MS = 15 * 60 * 1000; // 15 minutes
 
@@ -11,6 +13,19 @@ export async function fetchWeather(lat, lng, signal) {
     return cached.data;
   }
 
+  // 1. Try RouteX Backend API
+  try {
+    const data = await api.routes.weather(roundedLat, roundedLng, signal);
+    if (data) {
+      weatherCache.set(cacheKey, { data, timestamp: Date.now() });
+      return data;
+    }
+  } catch (err) {
+    if (err.name === 'AbortError') throw err;
+    console.warn('Backend weather API unavailable, using direct Open-Meteo fallback:', err.message);
+  }
+
+  // 2. Direct Open-Meteo Fallback
   const url = `https://api.open-meteo.com/v1/forecast?latitude=${roundedLat}&longitude=${roundedLng}&current=temperature_2m,relative_humidity_2m,apparent_temperature,precipitation,weather_code,wind_speed_10m`;
 
   try {
@@ -40,7 +55,7 @@ export async function fetchWeather(lat, lng, signal) {
     return weather;
   } catch (err) {
     if (err.name === 'AbortError') throw err;
-    console.error('Weather fetch failed:', err);
+    console.error('Weather fetch fallback failed:', err);
     return null;
   }
 }
@@ -81,10 +96,9 @@ function interpretWmoCode(code) {
     case 86:
       return { description: 'Snow showers', icon: 'CloudSnow', isRaining: false, isSevere: true };
     case 95:
-      return { description: 'Thunderstorm', icon: 'CloudLightning', isRaining: true, isSevere: true };
     case 96:
     case 99:
-      return { description: 'Thunderstorm with hail', icon: 'CloudLightning', isRaining: true, isSevere: true };
+      return { description: 'Thunderstorm', icon: 'CloudLightning', isRaining: true, isSevere: true };
     default:
       return { description: 'Fair weather', icon: 'Sun', isRaining: false, isSevere: false };
   }

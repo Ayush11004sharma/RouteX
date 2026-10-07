@@ -1,3 +1,5 @@
+import { api } from './api';
+
 function getHaversineDistance(c1, c2) {
   const R = 6371000;
   const dLat = ((c2[0] - c1[0]) * Math.PI) / 180;
@@ -13,11 +15,24 @@ function getHaversineDistance(c1, c2) {
 }
 
 /**
- * Fetches elevation profile along a route geometry using Open-Meteo elevation API.
+ * Fetches elevation profile along a route geometry via Backend API with fallback.
  */
 export async function getRouteElevation(geometry, maxSamples = 40, signal) {
   if (!geometry || geometry.length < 2) return null;
 
+  // 1. Try RouteX Backend API
+  try {
+    const coordsString = geometry.map((c) => `${c[0]},${c[1]}`).join(';');
+    const result = await api.routes.elevation(coordsString, maxSamples, signal);
+    if (result && result.points) {
+      return result;
+    }
+  } catch (err) {
+    if (err.name === 'AbortError') throw err;
+    console.warn('Backend elevation API unavailable, using direct fallback:', err.message);
+  }
+
+  // 2. Direct Open-Meteo Fallback
   const cumulativeDistances = [0];
   let totalDist = 0;
   for (let i = 1; i < geometry.length; i++) {
@@ -86,7 +101,7 @@ export async function getRouteElevation(geometry, maxSamples = 40, signal) {
     };
   } catch (err) {
     if (err.name === 'AbortError') throw err;
-    console.error('Route elevation fetch failed:', err);
+    console.error('Route elevation fetch fallback failed:', err);
     return null;
   }
 }

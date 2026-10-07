@@ -22,6 +22,10 @@ export const SettingsPanel = () => {
     savedPlaces,
     recentSearches,
     setActiveTab,
+    user,
+    isAuthenticated,
+    openAuthModal,
+    logout,
   } = useAppStore();
 
   const handleClearAllData = () => {
@@ -56,6 +60,58 @@ export const SettingsPanel = () => {
       </div>
 
       <div className="p-4 space-y-6">
+        {/* Account & Cloud Sync Section */}
+        <div className="space-y-2.5">
+          <label className="text-xs font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500">
+            Account & Cloud Sync
+          </label>
+          <div className="p-3.5 bg-slate-50 dark:bg-slate-800/60 rounded-2xl border border-slate-200/80 dark:border-slate-700/80 space-y-3">
+            {isAuthenticated && user ? (
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-full bg-blue-100 dark:bg-blue-900/60 text-blue-700 dark:text-blue-300 flex items-center justify-center font-bold text-sm">
+                    {user.name ? user.name.charAt(0).toUpperCase() : 'U'}
+                  </div>
+                  <div>
+                    <div className="text-xs font-bold text-slate-900 dark:text-white flex items-center gap-1.5">
+                      <span>{user.name}</span>
+                      <span className="px-1.5 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-400 text-[10px] font-semibold">
+                        Synced
+                      </span>
+                    </div>
+                    <div className="text-[11px] text-slate-500 dark:text-slate-400 truncate max-w-[170px]">
+                      {user.email}
+                    </div>
+                  </div>
+                </div>
+                <button
+                  onClick={logout}
+                  className="px-3 py-1.5 bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-200 text-xs font-medium rounded-xl transition"
+                >
+                  Sign Out
+                </button>
+              </div>
+            ) : (
+              <div className="flex items-center justify-between">
+                <div>
+                  <div className="text-xs font-bold text-slate-900 dark:text-white">
+                    Guest Mode
+                  </div>
+                  <div className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
+                    Sign in to sync saved places & history
+                  </div>
+                </div>
+                <button
+                  onClick={() => openAuthModal('login')}
+                  className="px-3.5 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold rounded-xl shadow-sm transition"
+                >
+                  Sign In
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+
         {/* Theme Settings */}
         <div className="space-y-2.5">
           <label className="text-xs font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500">

@@ -5,7 +5,12 @@ import { NotFoundPage } from './pages/NotFoundPage';
 import { useAppStore } from './stores/useAppStore';
 
 export const App = () => {
-  const { settings } = useAppStore();
+  const { settings, checkAuth } = useAppStore();
+
+  // Check authentication and restore user session on mount
+  useEffect(() => {
+    checkAuth();
+  }, [checkAuth]);
 
   // Apply dark mode on load or change
   useEffect(() => {

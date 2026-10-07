@@ -1,16 +1,30 @@
 import { NEARBY_CATEGORIES } from '../constants';
+import { api } from './api';
 
 const placesCache = new Map();
 
 /**
- * Searches real POIs nearby given coordinates using Overpass API with Nominatim fallback.
+ * Searches real POIs nearby given coordinates via Backend API with Overpass/Nominatim fallback.
  */
-export async function searchNearby(lat, lng, categoryId, radiusMeters = 3000, signal) {
+export async function searchNearby(lat, lng, categoryId, radiusMeters = 3500, signal) {
   const cacheKey = `${Number(lat).toFixed(3)},${Number(lng).toFixed(3)}_${categoryId}_${radiusMeters}`;
   if (placesCache.has(cacheKey)) {
     return placesCache.get(cacheKey);
   }
 
+  // 1. Try RouteX Backend API
+  try {
+    const results = await api.places.searchNearby(lat, lng, categoryId, radiusMeters, signal);
+    if (Array.isArray(results) && results.length > 0) {
+      placesCache.set(cacheKey, results);
+      return results;
+    }
+  } catch (err) {
+    if (err.name === 'AbortError') throw err;
+    console.warn('Backend searchNearby API unavailable, falling back to direct Overpass:', err.message);
+  }
+
+  // 2. Direct Overpass API Fallback
   const category = NEARBY_CATEGORIES.find((c) => c.id === categoryId);
   const queryTerm = category ? category.query : categoryId;
 
@@ -48,7 +62,7 @@ export async function searchNearby(lat, lng, categoryId, radiusMeters = 3000, si
     console.warn('Overpass POI query failed, falling back to Nominatim POI search:', err);
   }
 
-  // Fallback: Nominatim bounded search
+  // 3. Fallback: Nominatim bounded search
   try {
     const delta = (radiusMeters / 111320) * 1.2;
     const viewbox = [
@@ -70,7 +84,7 @@ export async function searchNearby(lat, lng, categoryId, radiusMeters = 3000, si
     const nomRes = await fetch(nomUrl.toString(), {
       signal,
       headers: {
-        'Accept': 'application/json',
+        Accept: 'application/json',
         'Accept-Language': 'en-US,en;q=0.9',
       },
     });

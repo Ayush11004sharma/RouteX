@@ -12,6 +12,7 @@ import { getRoute } from '../services/routing';
 import { fetchWeather } from '../services/weather';
 import { getRouteElevation } from '../services/elevation';
 import { voiceService } from '../services/voice';
+import { api } from '../services/api';
 
 let simulatorInterval = null;
 
@@ -97,6 +98,14 @@ export const useAppStore = create((set, get) => ({
   savedPlaces: loadInitialSavedPlaces(),
   recentSearches: loadInitialRecentSearches(),
   settings: loadInitialSettings(),
+
+  // Auth & Cloud Sync State
+  user: null,
+  isAuthenticated: false,
+  isAuthLoading: false,
+  authError: null,
+  authModalOpen: false,
+  authModalMode: 'login',
 
   activeTab: 'search',
   isMobileDrawerOpen: false,
@@ -567,9 +576,146 @@ export const useAppStore = create((set, get) => ({
     });
   },
 
-  savePlace: (place, label, category = 'favorite') => {
+  openAuthModal: (mode = 'login') =>
+    set({ authModalOpen: true, authModalMode: mode, authError: null }),
+
+  closeAuthModal: () =>
+    set({ authModalOpen: false, authError: null }),
+
+  setAuthModalMode: (mode) =>
+    set({ authModalMode: mode, authError: null }),
+
+  checkAuth: async () => {
+    const token = localStorage.getItem('routex_access_token');
+    if (!token) return;
+    set({ isAuthLoading: true });
+    try {
+      const user = await api.auth.getMe();
+      if (user) {
+        set({ user, isAuthenticated: true, isAuthLoading: false });
+        get().syncWithBackend();
+      } else {
+        set({ user: null, isAuthenticated: false, isAuthLoading: false });
+      }
+    } catch {
+      set({ user: null, isAuthenticated: false, isAuthLoading: false });
+    }
+  },
+
+  login: async (email, password) => {
+    set({ isAuthLoading: true, authError: null });
+    try {
+      const result = await api.auth.login(email, password);
+      set({
+        user: result.user,
+        isAuthenticated: true,
+        isAuthLoading: false,
+        authModalOpen: false,
+      });
+      get().syncWithBackend();
+      return result;
+    } catch (err) {
+      set({ isAuthLoading: false, authError: err.message });
+      throw err;
+    }
+  },
+
+  register: async (name, email, password) => {
+    set({ isAuthLoading: true, authError: null });
+    try {
+      const result = await api.auth.register(name, email, password);
+      set({
+        user: result.user,
+        isAuthenticated: true,
+        isAuthLoading: false,
+        authModalOpen: false,
+      });
+      get().syncWithBackend();
+      return result;
+    } catch (err) {
+      set({ isAuthLoading: false, authError: err.message });
+      throw err;
+    }
+  },
+
+  logout: async () => {
+    try {
+      await api.auth.logout();
+    } catch (e) {
+      console.warn('Logout error:', e);
+    }
+    set({
+      user: null,
+      isAuthenticated: false,
+      savedPlaces: loadInitialSavedPlaces(),
+      recentSearches: loadInitialRecentSearches(),
+    });
+  },
+
+  syncWithBackend: async () => {
+    try {
+      // 1. Sync guest saved places up to backend
+      const localPlaces = get().savedPlaces;
+      if (localPlaces.length > 0) {
+        try {
+          await api.savedPlaces.sync(localPlaces);
+        } catch {
+          // ignore sync failure
+        }
+      }
+
+      // 2. Fetch fresh saved places from backend
+      const serverPlaces = await api.savedPlaces.list();
+      if (Array.isArray(serverPlaces)) {
+        const formatted = serverPlaces.map((sp) => ({
+          id: sp.id,
+          label: sp.customLabel || sp.name,
+          category: sp.category || 'favorite',
+          customLabel: sp.customLabel || sp.name,
+          place: sp.placeData || {
+            id: sp.placeId || sp.id,
+            name: sp.name,
+            displayName: sp.address || sp.name,
+            lat: sp.latitude,
+            lng: sp.longitude,
+            type: sp.category,
+          },
+          savedAt: new Date(sp.createdAt).getTime(),
+        }));
+        set({ savedPlaces: formatted });
+        try {
+          localStorage.setItem(STORAGE_KEYS.SAVED_PLACES, JSON.stringify(formatted));
+        } catch {}
+      }
+
+      // 3. Fetch search history from backend
+      const serverHistory = await api.history.list();
+      if (Array.isArray(serverHistory)) {
+        const formattedHistory = serverHistory.map((item) => ({
+          id: item.id,
+          place: item.placeData || {
+            id: item.placeId || item.id,
+            name: item.placeName || item.query,
+            displayName: item.address || item.placeName || item.query,
+            lat: item.latitude || 0,
+            lng: item.longitude || 0,
+          },
+          timestamp: new Date(item.createdAt).getTime(),
+        }));
+        set({ recentSearches: formattedHistory });
+        try {
+          localStorage.setItem(STORAGE_KEYS.RECENT_SEARCHES, JSON.stringify(formattedHistory));
+        } catch {}
+      }
+    } catch (err) {
+      console.warn('Backend sync warning:', err);
+    }
+  },
+
+  savePlace: async (place, label, category = 'favorite') => {
+    const tempId = `saved_${Date.now()}`;
     const newSaved = {
-      id: `saved_${Date.now()}`,
+      id: tempId,
       label: label || place.name,
       category,
       customLabel: label,
@@ -587,9 +733,37 @@ export const useAppStore = create((set, get) => ({
       }
       return { savedPlaces: updated };
     });
+
+    if (get().isAuthenticated) {
+      try {
+        const created = await api.savedPlaces.create({
+          placeId: String(place.id || place.osmId || tempId),
+          name: label || place.name,
+          address: place.displayName || place.address?.formattedAddress || '',
+          latitude: place.lat,
+          longitude: place.lng,
+          category,
+          customLabel: label,
+          placeData: place,
+        });
+        if (created?.id) {
+          set((state) => {
+            const updated = state.savedPlaces.map((p) =>
+              p.id === tempId ? { ...p, id: created.id } : p
+            );
+            try {
+              localStorage.setItem(STORAGE_KEYS.SAVED_PLACES, JSON.stringify(updated));
+            } catch {}
+            return { savedPlaces: updated };
+          });
+        }
+      } catch (e) {
+        console.warn('Failed to sync saved place to backend:', e);
+      }
+    }
   },
 
-  removeSavedPlace: (id) => {
+  removeSavedPlace: async (id) => {
     set((state) => {
       const updated = state.savedPlaces.filter((p) => p.id !== id);
       try {
@@ -599,11 +773,20 @@ export const useAppStore = create((set, get) => ({
       }
       return { savedPlaces: updated };
     });
+
+    if (get().isAuthenticated) {
+      try {
+        await api.savedPlaces.delete(id);
+      } catch (e) {
+        console.warn('Failed to delete saved place on backend:', e);
+      }
+    }
   },
 
-  addRecentSearch: (place) => {
+  addRecentSearch: async (place) => {
+    const tempId = `recent_${Date.now()}`;
     const newRecent = {
-      id: `recent_${Date.now()}`,
+      id: tempId,
       place,
       timestamp: Date.now(),
     };
@@ -618,9 +801,25 @@ export const useAppStore = create((set, get) => ({
       }
       return { recentSearches: updated };
     });
+
+    if (get().isAuthenticated) {
+      try {
+        await api.history.add({
+          query: place.name || place.displayName || 'Location',
+          placeId: String(place.id || place.osmId || tempId),
+          placeName: place.name || 'Location',
+          address: place.displayName || '',
+          latitude: place.lat,
+          longitude: place.lng,
+          placeData: place,
+        });
+      } catch (e) {
+        console.warn('Failed to sync search history to backend:', e);
+      }
+    }
   },
 
-  removeRecentSearch: (id) => {
+  removeRecentSearch: async (id) => {
     set((state) => {
       const updated = state.recentSearches.filter((r) => r.id !== id);
       try {
@@ -630,15 +829,31 @@ export const useAppStore = create((set, get) => ({
       }
       return { recentSearches: updated };
     });
+
+    if (get().isAuthenticated) {
+      try {
+        await api.history.deleteItem(id);
+      } catch (e) {
+        console.warn('Failed to delete search history item on backend:', e);
+      }
+    }
   },
 
-  clearRecentSearches: () => {
+  clearRecentSearches: async () => {
     try {
       localStorage.removeItem(STORAGE_KEYS.RECENT_SEARCHES);
     } catch (e) {
       console.error(e);
     }
     set({ recentSearches: [] });
+
+    if (get().isAuthenticated) {
+      try {
+        await api.history.clear();
+      } catch (e) {
+        console.warn('Failed to clear search history on backend:', e);
+      }
+    }
   },
 
   updateSettings: (updates) => {

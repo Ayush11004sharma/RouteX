@@ -8,11 +8,21 @@ import {
   Settings,
   Info,
   MapPin,
+  User,
 } from 'lucide-react';
 import { useAppStore } from '../../stores/useAppStore';
 
 export const SidebarNav = () => {
-  const { activeTab, setActiveTab, savedPlaces, recentSearches, setIsMobileDrawerOpen } = useAppStore();
+  const {
+    activeTab,
+    setActiveTab,
+    savedPlaces,
+    recentSearches,
+    setIsMobileDrawerOpen,
+    user,
+    isAuthenticated,
+    openAuthModal,
+  } = useAppStore();
 
   const navItems = [
     { id: 'search', label: 'Explore', icon: Search },
@@ -73,6 +83,37 @@ export const SidebarNav = () => {
           );
         })}
       </nav>
+
+      {/* User Account / Auth Profile Button */}
+      <div className="w-full px-2 mb-2">
+        {isAuthenticated && user ? (
+          <button
+            onClick={() => openAuthModal('login')}
+            className="w-full flex flex-col items-center justify-center py-2 rounded-2xl transition hover:bg-slate-100 dark:hover:bg-slate-800 text-blue-600 dark:text-blue-400 group"
+            title={`Signed in as ${user.name} (${user.email})`}
+          >
+            <div className="w-8 h-8 rounded-full bg-blue-100 dark:bg-blue-900/60 text-blue-700 dark:text-blue-300 flex items-center justify-center font-bold text-xs ring-2 ring-blue-500/30">
+              {user.name ? user.name.charAt(0).toUpperCase() : 'U'}
+            </div>
+            <span className="text-[10px] mt-1 font-medium text-slate-600 dark:text-slate-300 truncate max-w-[54px]">
+              {user.name ? user.name.split(' ')[0] : 'Account'}
+            </span>
+          </button>
+        ) : (
+          <button
+            onClick={() => openAuthModal('login')}
+            className="w-full flex flex-col items-center justify-center py-2 rounded-2xl transition text-slate-500 hover:text-blue-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800"
+            title="Sign In / Register"
+          >
+            <div className="w-8 h-8 rounded-full bg-slate-100 dark:bg-slate-800 flex items-center justify-center">
+              <User className="w-4 h-4" />
+            </div>
+            <span className="text-[10px] mt-1 font-medium">
+              Sign In
+            </span>
+          </button>
+        )}
+      </div>
 
       {/* Subtle version indicator */}
       <div className="text-[10px] text-slate-300 dark:text-slate-600 font-mono">

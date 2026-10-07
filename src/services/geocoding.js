@@ -1,3 +1,5 @@
+import { api } from './api';
+
 const searchCache = new Map();
 const reverseCache = new Map();
 
@@ -14,7 +16,7 @@ async function throttleRequest() {
 }
 
 /**
- * Searches places worldwide via Nominatim API.
+ * Searches places worldwide via RouteX Backend API with Nominatim fallback.
  */
 export async function searchLocations(query, options = {}) {
   const trimmed = String(query || '').trim();
@@ -27,6 +29,19 @@ export async function searchLocations(query, options = {}) {
     return searchCache.get(cacheKey);
   }
 
+  // 1. Try RouteX Backend API
+  try {
+    const results = await api.places.search(trimmed, options.limit || 8, options.signal);
+    if (Array.isArray(results) && results.length > 0) {
+      searchCache.set(cacheKey, results);
+      return results;
+    }
+  } catch (err) {
+    if (err.name === 'AbortError') throw err;
+    console.warn('Backend search API failed or unavailable, using direct fallback:', err.message);
+  }
+
+  // 2. Direct Nominatim Fallback
   await throttleRequest();
 
   const url = new URL('https://nominatim.openstreetmap.org/search');
@@ -45,7 +60,7 @@ export async function searchLocations(query, options = {}) {
     const response = await fetch(url.toString(), {
       signal: options.signal,
       headers: {
-        'Accept': 'application/json',
+        Accept: 'application/json',
         'Accept-Language': 'en-US,en;q=0.9',
       },
     });
@@ -71,7 +86,7 @@ export async function searchLocations(query, options = {}) {
 }
 
 /**
- * Reverse geocodes coordinates to a human-readable place.
+ * Reverse geocodes coordinates to a human-readable place via Backend API with direct fallback.
  */
 export async function reverseGeocode(lat, lng, options = {}) {
   const roundedLat = Number(Number(lat).toFixed(5));
@@ -82,6 +97,19 @@ export async function reverseGeocode(lat, lng, options = {}) {
     return reverseCache.get(cacheKey);
   }
 
+  // 1. Try RouteX Backend API
+  try {
+    const result = await api.places.reverseGeocode(roundedLat, roundedLng, options.signal);
+    if (result) {
+      reverseCache.set(cacheKey, result);
+      return result;
+    }
+  } catch (err) {
+    if (err.name === 'AbortError') throw err;
+    console.warn('Backend reverseGeocode API failed, using fallback:', err.message);
+  }
+
+  // 2. Direct Nominatim Fallback
   await throttleRequest();
 
   const url = new URL('https://nominatim.openstreetmap.org/reverse');
@@ -97,15 +125,12 @@ export async function reverseGeocode(lat, lng, options = {}) {
     const response = await fetch(url.toString(), {
       signal: options.signal,
       headers: {
-        'Accept': 'application/json',
+        Accept: 'application/json',
         'Accept-Language': 'en-US,en;q=0.9',
       },
     });
 
     if (!response.ok) {
-      if (response.status === 429) {
-        throw new Error('Reverse geocoding rate limited. Please wait a moment.');
-      }
       return null;
     }
 
@@ -117,7 +142,7 @@ export async function reverseGeocode(lat, lng, options = {}) {
     return place;
   } catch (error) {
     if (error.name === 'AbortError') throw error;
-    console.error('Reverse geocoding failed:', error);
+    console.error('Reverse geocoding fallback failed:', error);
     return null;
   }
 }

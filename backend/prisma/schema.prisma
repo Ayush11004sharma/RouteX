@@ -1,0 +1,96 @@
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+model User {
+  id           String         @id @default(uuid())
+  name         String
+  email        String         @unique
+  passwordHash String
+  profileImage String?
+  role         String         @default("USER")
+  createdAt    DateTime       @default(now())
+  updatedAt    DateTime       @updatedAt
+
+  savedPlaces    SavedPlace[]
+  recentSearches RecentSearch[]
+  favoriteRoutes FavoriteRoute[]
+  refreshTokens  RefreshToken[]
+
+  @@index([email])
+}
+
+model RefreshToken {
+  id        String   @id @default(uuid())
+  token     String   @unique
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  expiresAt DateTime
+  revoked   Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+  @@index([token])
+}
+
+model SavedPlace {
+  id          String   @id @default(uuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  placeId     String?
+  name        String
+  address     String
+  latitude    Float
+  longitude   Float
+  category    String   @default("favorite")
+  customLabel String?
+  placeData   Json?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([userId])
+  @@index([userId, category])
+}
+
+model RecentSearch {
+  id        String   @id @default(uuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  query     String?
+  placeId   String?
+  placeName String
+  address   String
+  latitude  Float
+  longitude Float
+  placeData Json?
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+  @@index([userId, createdAt])
+}
+
+model FavoriteRoute {
+  id              String   @id @default(uuid())
+  userId          String
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  title           String
+  originName      String
+  destinationName String
+  originLat       Float
+  originLng       Float
+  destLat         Float
+  destLng         Float
+  travelMode      String   @default("driving")
+  distance        Float
+  duration        Float
+  routeData       Json
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([userId])
+}

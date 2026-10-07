@@ -1,5 +1,7 @@
+import { api } from './api';
+
 /**
- * Calculates real route between 2 or more coordinates using OSRM.
+ * Calculates real route between 2 or more coordinates via Backend API with OSRM fallback.
  * coordinates: array of [lat, lng]
  */
 export async function getRoute(coordsOrFrom, toOrMode, modeArg, signal) {
@@ -32,9 +34,23 @@ export async function getRoute(coordsOrFrom, toOrMode, modeArg, signal) {
     }
   }
 
-  // OSRM expects coordinates as: lng1,lat1;lng2,lat2;lng3,lat3...
-  const coordString = coords.map((c) => `${c[1]},${c[0]}`).join(';');
+  // 1. Try RouteX Backend API
+  try {
+    const origin = { lat: coords[0][0], lng: coords[0][1] };
+    const destination = { lat: coords[coords.length - 1][0], lng: coords[coords.length - 1][1] };
+    const waypoints = coords.slice(1, -1).map((c) => ({ lat: c[0], lng: c[1] }));
 
+    const result = await api.routes.calculate(origin, destination, waypoints, mode, abortSignal);
+    if (result && result.route) {
+      return result;
+    }
+  } catch (err) {
+    if (err.name === 'AbortError') throw err;
+    console.warn('Backend routing API unavailable, using direct OSRM fallback:', err.message);
+  }
+
+  // 2. Direct OSRM Fallback
+  const coordString = coords.map((c) => `${c[1]},${c[0]}`).join(';');
   const profile = mode === 'walking' ? 'foot' : mode === 'cycling' ? 'bike' : 'driving';
   let osrmData = null;
   let usedFallback = false;
